@@ -1,6 +1,7 @@
 #!/bin/sh
 
 if [ -n "$1" ]; then
+    # shellcheck disable=SC2124
     FILES_TO_CONVERT="$@"
 else
     FILES_TO_CONVERT="$(find . -name '*.py')"
@@ -368,7 +369,7 @@ for f in $FILES_TO_CONVERT; do
     -pe "s/Gst.element_make_from_uri/Gst.Element.make_from_uri/g;" \
     -pe "s/Gst.event_new_seek/Gst.Event.new_seek/g;" \
     -pe "s/Gst.GhostPad\(/Gst.GhostPad.new\(/g;" \
-    $f
+    "$f"
 done
 
 
