@@ -1,5 +1,6 @@
 # -*- Mode: Python -*-
 
+import os
 import sys
 import gc
 import unittest
@@ -9,6 +10,8 @@ from gi.repository import GLib
 from gi import PyGIDeprecationWarning
 
 from .helper import capture_glib_warnings
+
+in_flatpak = os.getenv("GTK_IN_FLATPAK")
 
 
 class Idle(GLib.Idle):
@@ -193,7 +196,7 @@ class TestSource(unittest.TestCase):
         GLib.Timeout(20)
         GLib.Idle()
 
-    @unittest.skipIf(sys.platform == "darwin", "hangs")
+    @unittest.skipIf(sys.platform == "darwin" or in_flatpak, "hangs")
     def test_finalize(self):
         self.dispatched = False
         self.finalized = False
