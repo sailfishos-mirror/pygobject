@@ -2,6 +2,7 @@
 # vim: tabstop=4 shiftwidth=4 expandtab
 
 import contextlib
+import os
 import unittest
 import sys
 import gc
@@ -910,7 +911,7 @@ class TestGtk(unittest.TestCase):
         GLib.idle_add(Gtk.main_quit, 'hello')
         Gtk.main()
 
-    @unittest.skip("broken")
+    @unittest.skip(os.getenv("GTK_IN_FLATPAK"))
     def test_widget_render_icon(self):
         button = Gtk.Button(label='OK')
         pixbuf = button.render_icon(Gtk.STOCK_OK, Gtk.IconSize.BUTTON)
