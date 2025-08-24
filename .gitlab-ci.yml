@@ -12,6 +12,9 @@ spec:
         - "pypy-3.11"
     default_version:
       default: "python-3.13"
+    build_images:
+      options: ["never", "always"]
+      default: "never"
 
 ---
 
@@ -53,7 +56,7 @@ build-image:
         - ".gitlab-ci.yml"
         - ".gitlab-ci/Dockerfile"
       when: always
-    - if: $CI_COMMIT_BRANCH == "python-3-14-fixes"
+    - when: $[[ inputs.build_images ]]
   variables:
     STORAGE_DRIVER: vfs
     BUILDAH_ISOLATION: chroot
