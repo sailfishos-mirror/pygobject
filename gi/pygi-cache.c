@@ -46,10 +46,8 @@
  * direction: marshaling direction to store in the cache
  *
  * Initializer for PyGIArgCache
- *
- * Returns: TRUE on success and FALSE on failure
  */
-gboolean
+void
 pygi_arg_base_setup (
     PyGIArgCache *arg_cache, GITypeInfo *type_info,
     GIArgInfo *arg_info, /* may be NULL for return arguments */
@@ -71,7 +69,6 @@ pygi_arg_base_setup (
         gi_base_info_ref ((GIBaseInfo *)arg_info);
         arg_cache->arg_info = arg_info;
     }
-    return TRUE;
 }
 
 void
@@ -140,7 +137,7 @@ _interface_cache_free_func (PyGIInterfaceCache *cache)
  *
  * Returns: TRUE on success and FALSE on failure
  */
-gboolean
+static gboolean
 pygi_arg_interface_setup (
     PyGIInterfaceCache *iface_cache, GITypeInfo *type_info,
     GIArgInfo *arg_info, /* may be NULL for return arguments */
@@ -149,10 +146,8 @@ pygi_arg_interface_setup (
 {
     GIBaseInfo *base_info = GI_BASE_INFO (iface_info);
 
-    if (!pygi_arg_base_setup ((PyGIArgCache *)iface_cache, type_info, arg_info,
-                              transfer, direction)) {
-        return FALSE;
-    }
+    pygi_arg_base_setup ((PyGIArgCache *)iface_cache, type_info, arg_info,
+                         transfer, direction);
 
     ((PyGIArgCache *)iface_cache)->destroy_notify =
         (GDestroyNotify)_interface_cache_free_func;
@@ -230,10 +225,8 @@ pygi_arg_sequence_setup (
     GITypeInfo *item_type_info;
     GITransfer item_transfer;
 
-    if (!pygi_arg_base_setup ((PyGIArgCache *)sc, type_info, arg_info,
-                              transfer, direction)) {
-        return FALSE;
-    }
+    pygi_arg_base_setup ((PyGIArgCache *)sc, type_info, arg_info, transfer,
+                         direction);
 
     sc->arg_cache.destroy_notify = (GDestroyNotify)_sequence_cache_free_func;
     item_type_info = gi_type_info_get_param_type (type_info, 0);

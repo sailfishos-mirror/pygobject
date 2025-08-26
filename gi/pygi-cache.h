@@ -232,16 +232,10 @@ struct _PyGIVFuncCache {
 };
 
 
-gboolean pygi_arg_base_setup (
+void pygi_arg_base_setup (
     PyGIArgCache *arg_cache, GITypeInfo *type_info,
     GIArgInfo *arg_info, /* may be NULL for return arguments */
     GITransfer transfer, PyGIDirection direction);
-
-gboolean pygi_arg_interface_setup (
-    PyGIInterfaceCache *iface_cache, GITypeInfo *type_info,
-    GIArgInfo *arg_info, /* may be NULL for return arguments */
-    GITransfer transfer, PyGIDirection direction,
-    GIRegisteredTypeInfo *iface_info);
 
 gboolean pygi_arg_sequence_setup (
     PyGISequenceCache *sc, GITypeInfo *type_info,
