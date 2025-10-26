@@ -1805,7 +1805,6 @@ class TestGValue(unittest.TestCase):
         value = GObject.Value(GObject.TYPE_OBJECT, obj)
         del value
         gc.collect()
-        gc.collect()
         assert obj.__grefcount__ == grefcount
 
     def test_gvalue_gobject_ref_counts(self):
@@ -1838,7 +1837,6 @@ class TestGValue(unittest.TestCase):
         # refcount back to where we started
         del res
         del value
-        gc.collect()
         gc.collect()
         self.assertEqual(obj.__grefcount__, grefcount)
 
