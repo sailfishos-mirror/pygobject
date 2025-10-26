@@ -1904,9 +1904,7 @@ pygobject_get_pointer (PyGObject *self, void *closure)
 }
 
 static PyGetSetDef pygobject_getsets[] = {
-#ifndef PYPY_VERSION
     { "__dict__", PyObject_GenericGetDict, (setter)0 },
-#endif
     {
         "__grefcount__",
         (getter)pygobject_get_refcount,
