@@ -167,6 +167,160 @@ _pygi_arg_to_hash_pointer (const GIArgument *arg, GITypeInfo *type_info)
     }
 }
 
+static void
+_free_value_slice (GValue *value)
+{
+    g_value_unset (value);
+    g_slice_free (GValue, value);
+}
+
+static void
+_free_error_slice (GError **error)
+{
+    g_clear_error (error);
+    g_slice_free (GError *, error);
+}
+
+static GDestroyNotify
+_pygi_type_info_get_free_func (GITypeInfo *type_info, GITransfer transfer,
+                               gboolean is_none)
+{
+    GITypeTag type_tag = gi_type_info_get_tag (type_info);
+
+    if (is_none) return NULL;
+
+    switch (type_tag) {
+    case GI_TYPE_TAG_VOID:
+    case GI_TYPE_TAG_BOOLEAN:
+    case GI_TYPE_TAG_INT8:
+    case GI_TYPE_TAG_UINT8:
+    case GI_TYPE_TAG_INT16:
+    case GI_TYPE_TAG_UINT16:
+    case GI_TYPE_TAG_INT32:
+    case GI_TYPE_TAG_UINT32:
+    case GI_TYPE_TAG_INT64:
+    case GI_TYPE_TAG_UINT64:
+    case GI_TYPE_TAG_FLOAT:
+    case GI_TYPE_TAG_DOUBLE:
+    case GI_TYPE_TAG_GTYPE:
+    case GI_TYPE_TAG_UNICHAR:
+        break;
+    case GI_TYPE_TAG_FILENAME:
+    case GI_TYPE_TAG_UTF8:
+        /* With allow-none support the string could be NULL */
+        return g_free;
+        break;
+    case GI_TYPE_TAG_ARRAY:
+        switch (gi_type_info_get_array_type (type_info)) {
+        case GI_ARRAY_TYPE_C:
+            g_warning ("Cannot make a free_func for a C array");
+            break;
+        case GI_ARRAY_TYPE_ARRAY:
+            return (GDestroyNotify)g_array_unref;
+            break;
+        case GI_ARRAY_TYPE_PTR_ARRAY:
+            return (GDestroyNotify)g_ptr_array_unref;
+            break;
+        case GI_ARRAY_TYPE_BYTE_ARRAY:
+            return (GDestroyNotify)g_byte_array_unref;
+            break;
+        default:
+            g_critical ("_pygi_type_info_get_free_func:array - not reachable");
+            break;
+        }
+
+        break;
+    case GI_TYPE_TAG_INTERFACE: {
+        GIBaseInfo *info;
+        GDestroyNotify free_func = NULL;
+
+        info = gi_type_info_get_interface (type_info);
+
+        if (GI_IS_CALLBACK_INFO (info)) {
+            /* TODO */
+        } else if (GI_IS_STRUCT_INFO (info) || GI_IS_UNION_INFO (info)) {
+            GType type = gi_registered_type_info_get_g_type (
+                (GIRegisteredTypeInfo *)info);
+
+            if (g_type_is_a (type, G_TYPE_VALUE)) {
+                free_func = (GDestroyNotify)_free_value_slice;
+            } else if (g_type_is_a (type, G_TYPE_CLOSURE)) {
+                free_func = (GDestroyNotify)g_closure_unref;
+            } else if (GI_IS_STRUCT_INFO (info)) {
+                if (gi_struct_info_is_foreign ((GIStructInfo *)info)) {
+                    g_warning ("Cannot make a free func for a foreign struct");
+                }
+            } else if (g_type_is_a (type, G_TYPE_BOXED)) {
+                g_warning ("Cannot make a free func for a boxed type");
+            } else if (g_type_is_a (type, G_TYPE_POINTER)
+                       || type == G_TYPE_NONE) {
+                if (gi_type_info_is_pointer (type_info)) {
+                    g_warning ("Cannot make a free func for a pointer type");
+                }
+            }
+        } else if (GI_IS_ENUM_INFO (info) || GI_IS_FLAGS_INFO (info)) {
+            /* no-op */
+        } else if (GI_IS_INTERFACE_INFO (info) || GI_IS_OBJECT_INFO (info)) {
+            free_func = g_object_unref;
+        } else {
+            g_assert_not_reached ();
+        }
+
+        gi_base_info_unref (info);
+        return free_func;
+    }
+    case GI_TYPE_TAG_GLIST:
+    case GI_TYPE_TAG_GSLIST: {
+        GITypeInfo *item_type_info =
+            gi_type_info_get_param_type (type_info, 0);
+        GITransfer item_transfer = transfer == GI_TRANSFER_EVERYTHING
+                                       ? GI_TRANSFER_EVERYTHING
+                                       : GI_TRANSFER_NOTHING;
+        GDestroyNotify item_free = _pygi_type_info_get_free_func (
+            item_type_info, item_transfer, FALSE);
+
+        gi_base_info_unref ((GIBaseInfo *)item_type_info);
+
+        if (item_free != NULL) {
+            g_warning ("Cannot make free_func to free items in GList");
+        }
+
+        return type_tag == GI_TYPE_TAG_GSLIST ? (GDestroyNotify)g_slist_free
+                                              : (GDestroyNotify)g_list_free;
+    }
+    case GI_TYPE_TAG_GHASH: {
+        GITypeInfo *key_type_info = gi_type_info_get_param_type (type_info, 0);
+        GITypeInfo *value_type_info =
+            gi_type_info_get_param_type (type_info, 1);
+        GITransfer item_transfer = transfer == GI_TRANSFER_EVERYTHING
+                                       ? GI_TRANSFER_EVERYTHING
+                                       : GI_TRANSFER_NOTHING;
+        GDestroyNotify key_free_func = _pygi_type_info_get_free_func (
+            key_type_info, item_transfer, FALSE);
+        GDestroyNotify value_free_func = _pygi_type_info_get_free_func (
+            value_type_info, item_transfer, FALSE);
+
+        gi_base_info_unref ((GIBaseInfo *)key_type_info);
+        gi_base_info_unref ((GIBaseInfo *)value_type_info);
+
+        if (key_free_func != NULL) {
+            g_warning ("Cannot make free_func to free keys in GHashTable");
+        }
+
+        if (value_free_func != NULL) {
+            g_warning ("Cannot make free_func to free values in GHashTable");
+        }
+
+        return (GDestroyNotify)g_hash_table_unref;
+    }
+    case GI_TYPE_TAG_ERROR:
+        return (GDestroyNotify)_free_error_slice;
+    default:
+        break;
+    }
+
+    return NULL;
+}
 
 /**
  * _pygi_argument_array_length_marshal:
@@ -204,6 +358,67 @@ _pygi_argument_array_length_marshal (gsize length_arg_index, void *user_data1,
     return array_len;
 }
 
+static size_t
+_pygi_measure_c_zero_terminated_array_length (gpointer array, size_t item_size)
+{
+    gchar *array_ptr = array;
+    size_t length = 0;
+    char test_block[item_size];
+
+    memset (test_block, 0, sizeof (test_block));
+
+    /* Compare with a block of memory the same size of item_size
+     * and check that it is all zeros */
+    while (memcmp (test_block, array_ptr + (length * item_size), item_size))
+        ++length;
+
+    return length;
+}
+
+static gint
+_pygi_determine_c_array_length (gpointer array, GITypeInfo *type_info,
+                                size_t item_size,
+                                PyGIArgArrayLengthPolicy array_length_policy,
+                                void *user_data1, void *user_data2,
+                                size_t *return_length)
+{
+    gboolean is_zero_terminated = gi_type_info_is_zero_terminated (type_info);
+    size_t length = 0;
+
+    if (is_zero_terminated) {
+        /* Array can be arbitrarily long. Best to store the size in a size_t */
+        *return_length =
+            _pygi_measure_c_zero_terminated_array_length (array, item_size);
+        return 0;
+    } else {
+        gboolean has_length =
+            gi_type_info_get_array_fixed_size (type_info, &length);
+        if (!has_length) {
+            unsigned int length_arg_pos;
+            gboolean has_array_length;
+
+            if (G_UNLIKELY (array_length_policy == NULL)) {
+                return -1;
+            }
+
+            has_array_length = gi_type_info_get_array_length_index (
+                type_info, &length_arg_pos);
+            g_assert (has_array_length);
+
+            length =
+                array_length_policy (length_arg_pos, user_data1, user_data2);
+            if (length < 0) {
+                return -1;
+            }
+        }
+    }
+
+    /* Getting the length through GI or PyGIArgArrayLengthPolicy
+     * will be at most the size of a gint */
+    *return_length = length;
+    return 0;
+}
+
 /**
  * _pygi_argument_to_array
  * @arg: The argument to convert
@@ -234,7 +449,6 @@ _pygi_argument_to_array (GIArgument *arg,
     gboolean is_zero_terminated;
     gsize item_size;
     size_t length;
-    gssize length_policy;
     GArray *g_array;
 
     g_return_val_if_fail (
@@ -253,44 +467,16 @@ _pygi_argument_to_array (GIArgument *arg,
 
         gi_base_info_unref ((GIBaseInfo *)item_type_info);
 
-        if (is_zero_terminated) {
-            if (item_size == sizeof (gpointer))
-                length = g_strv_length ((gchar **)arg->v_pointer);
-            else if (item_size == 1)
-                length = strlen ((gchar *)arg->v_pointer);
-            else if (item_size == sizeof (int))
-                for (length = 0; *(((int *)arg->v_pointer) + length);
-                     length++);
-            else if (item_size == sizeof (short))
-                for (length = 0; *(((short *)arg->v_pointer) + length);
-                     length++);
-            else
-                g_assert_not_reached ();
-        } else {
-            if (!gi_type_info_get_array_fixed_size (type_info, &length)) {
-                unsigned int length_arg_pos;
-                gboolean has_array_length;
-
-                if (G_UNLIKELY (array_length_policy == NULL)) {
-                    g_critical ("Unable to determine array length for %p",
-                                arg->v_pointer);
-                    g_array = g_array_new (is_zero_terminated, FALSE,
-                                           (guint)item_size);
-                    *out_free_array = TRUE;
-                    return g_array;
-                }
-
-                has_array_length = gi_type_info_get_array_length_index (
-                    type_info, &length_arg_pos);
-                g_assert (has_array_length);
-
-                length_policy = array_length_policy (length_arg_pos,
-                                                     user_data1, user_data2);
-                if (length_policy < 0) {
-                    return NULL;
-                }
-                length = (size_t)length_policy;
-            }
+        if (_pygi_determine_c_array_length (arg->v_pointer, type_info,
+                                            item_size, array_length_policy,
+                                            user_data1, user_data2, &length)
+            < 0) {
+            g_critical ("Unable to determine array length for %p",
+                        arg->v_pointer);
+            g_array =
+                g_array_new (is_zero_terminated, FALSE, (guint)item_size);
+            *out_free_array = TRUE;
+            return g_array;
         }
 
         g_array = g_array_new (is_zero_terminated, FALSE, (guint)item_size);
@@ -308,8 +494,16 @@ _pygi_argument_to_array (GIArgument *arg,
         break;
     case GI_ARRAY_TYPE_PTR_ARRAY: {
         GPtrArray *ptr_array = (GPtrArray *)arg->v_pointer;
-        g_array = g_array_sized_new (FALSE, FALSE, sizeof (gpointer),
-                                     ptr_array->len);
+
+        // g_array = g_array_sized_new (FALSE, FALSE,
+        //                         sizeof(gpointer),
+        //                         ptr_array->len);
+
+        /* Similar pattern to GI_ARRAY_TYPE_C - we create a new
+         * array but free the segment and replace it with
+         * what was in the ptr_array */
+        g_array = g_array_new (FALSE, FALSE, sizeof (gpointer));
+        g_free (g_array->data);
         g_array->data = (char *)ptr_array->pdata;
         g_array->len = ptr_array->len;
         *out_free_array = TRUE;
@@ -325,6 +519,270 @@ _pygi_argument_to_array (GIArgument *arg,
     return g_array;
 }
 
+typedef void (*ArrayInsertFunc) (gpointer array, guint index, GIArgument item,
+                                 guint item_size);
+
+static gint
+_pygi_fill_array_from_object (gpointer array, GITypeInfo *item_type_info,
+                              GITransfer transfer, guint length,
+                              PyObject *object, ArrayInsertFunc insert_func)
+{
+    size_t item_size = _pygi_gi_type_info_size (item_type_info);
+    guint i = 0;
+
+    for (; i < length; ++i) {
+        PyObject *py_item;
+        GIArgument item;
+
+        py_item = PySequence_GetItem (object, i);
+        if (py_item == NULL) {
+            _PyGI_ERROR_PREFIX ("Item %u: ", i);
+            return -1;
+        }
+
+        item = _pygi_argument_from_object (py_item, item_type_info, transfer);
+
+        Py_DECREF (py_item);
+
+        if (PyErr_Occurred ()) {
+            _PyGI_ERROR_PREFIX ("Item %u: ", i);
+            return -1;
+        }
+
+        (*insert_func) (array, i, item, item_size);
+    }
+
+    return 0;
+}
+
+static inline void
+_pygi_insert_garray_element (gpointer array, guint index, GIArgument item,
+                             guint item_size)
+{
+    g_array_insert_vals ((GArray *)array, index, &item, 1);
+}
+
+static gint
+_pygi_set_g_array_argument (GIArgument *arg, GITypeInfo *type_info,
+                            GITypeInfo *item_type_info, GITransfer transfer,
+                            gboolean is_zero_terminated, guint length,
+                            PyObject *object)
+{
+    gint ret_val = -1;
+    size_t item_size = _pygi_gi_type_info_size (item_type_info);
+
+    GArray *array = g_array_sized_new (is_zero_terminated, FALSE,
+                                       (guint)item_size, length);
+    if (array == NULL) {
+        PyErr_NoMemory ();
+        goto out;
+    }
+
+    /* we handle arrays that are really strings specially */
+    if (gi_type_info_get_tag (item_type_info) == GI_TYPE_TAG_UINT8
+        && PyBytes_Check (object)) {
+        memcpy (array->data, PyBytes_AsString (object), length);
+        array->len = length;
+    } else {
+        GITransfer item_transfer =
+            transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING : transfer;
+
+        if (_pygi_fill_array_from_object (array, item_type_info, item_transfer,
+                                          length, object,
+                                          _pygi_insert_garray_element)
+            < 0) {
+            /* Free everything we have converted so far. */
+            _pygi_argument_release ((GIArgument *)array, type_info,
+                                    GI_TRANSFER_NOTHING, GI_DIRECTION_IN);
+            array = NULL;
+            goto out;
+        }
+    }
+
+    ret_val = 0;
+    arg->v_pointer = g_array_ref (array);
+
+out:
+    if (array) g_array_unref (array);
+
+    return ret_val;
+}
+
+static inline void
+_pygi_insert_c_array_element (gpointer array, guint index, GIArgument item,
+                              guint item_size)
+{
+    memcpy (((gchar *)array) + (index * item_size), &item, item_size);
+}
+
+static gint
+_pygi_set_c_array_argument (GIArgument *arg, GITypeInfo *type_info,
+                            GITypeInfo *item_type_info, GITransfer transfer,
+                            gboolean is_zero_terminated, guint length,
+                            PyObject *object)
+{
+    gint ret_val = -1;
+    size_t item_size = _pygi_gi_type_info_size (item_type_info);
+    size_t real_length = length + (is_zero_terminated ? 1 : 0);
+
+    gchar *array = (gchar *)g_malloc0 (item_size * real_length);
+    if (array == NULL) {
+        PyErr_NoMemory ();
+        goto out;
+    }
+
+    /* we handle arrays that are really strings specially */
+    if (gi_type_info_get_tag (item_type_info) == GI_TYPE_TAG_UINT8
+        && PyBytes_Check (object)) {
+        memcpy (array, PyBytes_AsString (object), length);
+    } else {
+        GITransfer item_transfer =
+            transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING : transfer;
+
+        if (_pygi_fill_array_from_object (array, item_type_info, item_transfer,
+                                          length, object,
+                                          _pygi_insert_c_array_element)
+            < 0) {
+            /* Free everything we have converted so far. */
+            _pygi_argument_release ((GIArgument *)&array, type_info,
+                                    GI_TRANSFER_NOTHING, GI_DIRECTION_IN);
+            array = NULL;
+            goto out;
+        }
+    }
+
+    ret_val = 0;
+    arg->v_pointer = array;
+
+    /* No need to free the array - the only place where
+     * we could fail was in _pygi_fill_array_from_object
+     * and there we call _pygi_argument_release
+     * which frees the array and the elements */
+out:
+    return ret_val;
+}
+
+static inline void
+_pygi_insert_g_ptr_array_element (gpointer array, guint index, GIArgument item,
+                                  guint item_size)
+{
+    g_ptr_array_insert ((GPtrArray *)array, index, item.v_pointer);
+}
+
+static gint
+_pygi_set_g_ptr_array_argument (GIArgument *arg, GITypeInfo *type_info,
+                                GITypeInfo *item_type_info,
+                                GITransfer transfer,
+                                gboolean is_zero_terminated, guint length,
+                                PyObject *object)
+{
+    size_t item_size = _pygi_gi_type_info_size (item_type_info);
+    GITransfer item_transfer;
+    gint ret_val = -1;
+    GDestroyNotify item_free_func = NULL;
+
+    if (item_size != sizeof (gpointer)) {
+        PyErr_SetString (
+            PyExc_NotImplementedError,
+            "item_size from python object array != sizeof (gpointer), "
+            "that will not work for GPtrArray");
+        return -1;
+    }
+
+    item_free_func =
+        _pygi_type_info_get_free_func (item_type_info, transfer, FALSE);
+
+    /* We create a new pointer array with size 0. It is OK to call
+     * g_ptr_array_insert as that will automatically grow the array */
+    GPtrArray *array = g_ptr_array_new_with_free_func (item_free_func);
+    item_transfer = transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING
+                                                      : transfer;
+
+    if (_pygi_fill_array_from_object (array, item_type_info, item_transfer,
+                                      length, object,
+                                      _pygi_insert_g_ptr_array_element)
+        < 0) {
+        /* Free everything we have converted so far. */
+        _pygi_argument_release ((GIArgument *)&array, type_info,
+                                GI_TRANSFER_NOTHING, GI_DIRECTION_IN);
+        array = NULL;
+        goto out;
+    }
+
+    ret_val = 0;
+    arg->v_pointer = g_ptr_array_ref (array);
+
+out:
+    if (array) g_ptr_array_unref (array);
+
+    return ret_val;
+}
+
+static inline void
+_pygi_insert_g_byte_array_element (gpointer array, guint index,
+                                   GIArgument item, guint item_size)
+{
+    guint8 *item_c = (guint8 *)&item.v_uint8;
+    GByteArray *byte_array = array;
+
+    byte_array->data[index] = *item_c;
+    byte_array->len = (byte_array->len <= index) ? index + 1 : byte_array->len;
+}
+
+static gint
+_pygi_set_g_byte_array_argument (GIArgument *arg, GITypeInfo *type_info,
+                                 GITypeInfo *item_type_info,
+                                 GITransfer transfer,
+                                 gboolean is_zero_terminated, guint length,
+                                 PyObject *object)
+{
+    size_t item_size = _pygi_gi_type_info_size (item_type_info);
+    GITransfer item_transfer;
+    gint ret_val = -01;
+
+    if (item_size != sizeof (gchar)) {
+        PyErr_SetString (
+            PyExc_NotImplementedError,
+            "item_size from python object array != sizeof (char), "
+            "that will not work for GByteArray");
+        return -1;
+    }
+
+    GByteArray *array = g_byte_array_sized_new (length);
+    if (array == NULL) {
+        PyErr_NoMemory ();
+        goto out;
+    }
+
+    item_transfer = transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING
+                                                      : transfer;
+
+    if (_pygi_fill_array_from_object (array, item_type_info, item_transfer,
+                                      length, object,
+                                      _pygi_insert_g_byte_array_element)
+        < 0) {
+        /* Free everything we have converted so far. */
+        _pygi_argument_release ((GIArgument *)&array, type_info,
+                                GI_TRANSFER_NOTHING, GI_DIRECTION_IN);
+        array = NULL;
+        goto out;
+    }
+
+    ret_val = 0;
+    arg->v_pointer = g_byte_array_ref (array);
+
+out:
+    if (array) g_byte_array_unref (array);
+
+    return ret_val;
+}
+
+typedef gint (*SetArrayArgumentFunc) (GIArgument *arg, GITypeInfo *type_info,
+                                      GITypeInfo *item_type_info,
+                                      GITransfer transfer,
+                                      gboolean is_zero_terminated,
+                                      guint length, PyObject *object);
+
 GIArgument
 _pygi_argument_from_object (PyObject *object, GITypeInfo *type_info,
                             GITransfer transfer)
@@ -339,12 +797,10 @@ _pygi_argument_from_object (PyObject *object, GITypeInfo *type_info,
     switch (type_tag) {
     case GI_TYPE_TAG_ARRAY: {
         Py_ssize_t py_length;
-        guint length, i;
+        guint length;
         gboolean is_zero_terminated;
         GITypeInfo *item_type_info;
-        gsize item_size;
-        GArray *array;
-        GITransfer item_transfer;
+        SetArrayArgumentFunc set_array_argument = NULL;
 
         if (Py_IsNone (object)) {
             arg.v_pointer = NULL;
@@ -365,64 +821,29 @@ _pygi_argument_from_object (PyObject *object, GITypeInfo *type_info,
         is_zero_terminated = gi_type_info_is_zero_terminated (type_info);
         item_type_info = gi_type_info_get_param_type (type_info, 0);
 
-        /* we handle arrays that are really strings specially, see below */
-        if (gi_type_info_get_tag (item_type_info) == GI_TYPE_TAG_UINT8)
-            item_size = 1;
-        else
-            item_size = sizeof (GIArgument);
-
-        array = g_array_sized_new (is_zero_terminated, FALSE, (guint)item_size,
-                                   length);
-        if (array == NULL) {
-            gi_base_info_unref ((GIBaseInfo *)item_type_info);
-            PyErr_NoMemory ();
+        switch (gi_type_info_get_array_type (type_info)) {
+        case GI_ARRAY_TYPE_C:
+            set_array_argument = _pygi_set_c_array_argument;
+            break;
+        case GI_ARRAY_TYPE_ARRAY:
+            set_array_argument = _pygi_set_g_array_argument;
+            break;
+        case GI_ARRAY_TYPE_PTR_ARRAY:
+            set_array_argument = _pygi_set_g_ptr_array_argument;
+            break;
+        case GI_ARRAY_TYPE_BYTE_ARRAY:
+            set_array_argument = _pygi_set_g_byte_array_argument;
+            break;
+        default:
+            g_critical ("_pygi_argument_from_object:array - not reachable");
             break;
         }
 
-        if (gi_type_info_get_tag (item_type_info) == GI_TYPE_TAG_UINT8
-            && PyBytes_Check (object)) {
-            memcpy (array->data, PyBytes_AsString (object), length);
-            array->len = length;
-            goto array_success;
-        }
+        /* Might fail, if so, exception will be set, but we
+         * can cleanup as normal here */
+        (*set_array_argument) (&arg, type_info, item_type_info, transfer,
+                               is_zero_terminated, length, object);
 
-
-        item_transfer = transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING
-                                                          : transfer;
-
-        for (i = 0; i < length; i++) {
-            PyObject *py_item;
-            GIArgument item;
-
-            py_item = PySequence_GetItem (object, i);
-            if (py_item == NULL) {
-                goto array_item_error;
-            }
-
-            item = _pygi_argument_from_object (py_item, item_type_info,
-                                               item_transfer);
-
-            Py_DECREF (py_item);
-
-            if (PyErr_Occurred ()) {
-                goto array_item_error;
-            }
-
-            g_array_insert_val (array, i, item);
-            continue;
-
-array_item_error:
-            /* Free everything we have converted so far. */
-            _pygi_argument_release ((GIArgument *)&array, type_info,
-                                    GI_TRANSFER_NOTHING, GI_DIRECTION_IN);
-            array = NULL;
-
-            _PyGI_ERROR_PREFIX ("Item %u: ", i);
-            break;
-        }
-
-array_success:
-        arg.v_pointer = array;
 
         gi_base_info_unref ((GIBaseInfo *)item_type_info);
         break;
@@ -604,14 +1025,20 @@ list_item_error:
             equal_func = NULL;
         }
 
-        hash_table = g_hash_table_new (hash_func, equal_func);
+        item_transfer = transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING
+                                                          : transfer;
+
+        hash_table =
+            g_hash_table_new_full (hash_func, equal_func,
+                                   _pygi_type_info_get_free_func (
+                                       key_type_info, item_transfer, FALSE),
+                                   _pygi_type_info_get_free_func (
+                                       value_type_info, item_transfer, FALSE));
+
         if (hash_table == NULL) {
             PyErr_NoMemory ();
             goto hash_table_release;
         }
-
-        item_transfer = transfer == GI_TRANSFER_CONTAINER ? GI_TRANSFER_NOTHING
-                                                          : transfer;
 
         for (i = 0; i < length; i++) {
             PyObject *py_key;
@@ -955,6 +1382,75 @@ _pygi_argument_to_object (GIArgument *arg, GITypeInfo *type_info,
     return object;
 }
 
+static void
+_pygi_array_release_elements (gchar *array, size_t n_items, guint item_size,
+                              GITypeInfo *item_type_info,
+                              GITransfer item_transfer, GIDirection direction)
+{
+    size_t i = 0;
+
+    if (G_UNLIKELY (item_size > sizeof (GIArgument))) {
+        g_error ("Stack overflow protection: %u > sizeof (GIArgument)",
+                 item_size);
+    }
+
+    for (; i < n_items; ++i) {
+        GIArgument item;
+        memcpy (&item, array + (item_size * i), item_size);
+        _pygi_argument_release (&item, item_type_info, item_transfer,
+                                direction);
+    }
+}
+
+static gchar *
+_pygi_get_underlying_array (GIArgument *arg, GITypeInfo *type_info,
+                            size_t *n_elements)
+{
+    GIArrayType array_type = gi_type_info_get_array_type (type_info);
+
+    g_assert (n_elements != NULL);
+
+    switch (array_type) {
+    case GI_ARRAY_TYPE_C: {
+        size_t length;
+        GITypeInfo *item_type_info =
+            gi_type_info_get_param_type (type_info, 0);
+        size_t item_size = _pygi_gi_type_info_size (item_type_info);
+
+        gi_base_info_unref ((GIBaseInfo *)item_type_info);
+
+        if (_pygi_determine_c_array_length (arg->v_pointer, type_info,
+                                            item_size, NULL, NULL, NULL,
+                                            &length)
+            < 0) {
+            g_critical (
+                "Unable to determine array length of %p, this will leak",
+                arg->v_pointer);
+
+            *n_elements = 0;
+            return (gchar *)arg->v_pointer;
+        }
+
+        *n_elements = length;
+        return (gchar *)arg->v_pointer;
+    }
+    case GI_ARRAY_TYPE_ARRAY:
+        *n_elements = ((GArray *)arg->v_pointer)->len;
+        return (gchar *)((GArray *)arg->v_pointer)->data;
+    case GI_ARRAY_TYPE_PTR_ARRAY:
+        *n_elements = ((GPtrArray *)arg->v_pointer)->len;
+        return (gchar *)((GPtrArray *)arg->v_pointer)->pdata;
+    case GI_ARRAY_TYPE_BYTE_ARRAY:
+        *n_elements = ((GByteArray *)arg->v_pointer)->len;
+        return (gchar *)((GByteArray *)arg->v_pointer)->data;
+    default:
+        g_critical ("_pygi_get_underlying_array: Should not be reached");
+        break;
+    }
+
+    return NULL;
+}
+
 void
 _pygi_argument_release (GIArgument *arg, GITypeInfo *type_info,
                         GITransfer transfer, GIDirection direction)
@@ -995,14 +1491,15 @@ _pygi_argument_release (GIArgument *arg, GITypeInfo *type_info,
         }
         break;
     case GI_TYPE_TAG_ARRAY: {
-        GArray *array;
-        gsize i;
+        size_t n_elements = 0;
+        gchar *array = NULL;
 
         if (arg->v_pointer == NULL) {
             return;
         }
 
-        array = arg->v_pointer;
+        array = _pygi_get_underlying_array (arg, type_info, &n_elements);
+
 
         if ((direction == GI_DIRECTION_IN
              && transfer != GI_TRANSFER_EVERYTHING)
@@ -1018,14 +1515,10 @@ _pygi_argument_release (GIArgument *arg, GITypeInfo *type_info,
                                 : GI_TRANSFER_EVERYTHING;
 
             /* Free the items */
-            for (i = 0; i < array->len; i++) {
-                GIArgument item;
-                memcpy (&item,
-                        array->data + (g_array_get_element_size (array) * i),
-                        sizeof (GIArgument));
-                _pygi_argument_release (&item, item_type_info, item_transfer,
-                                        direction);
-            }
+            _pygi_array_release_elements (
+                array, n_elements, _pygi_gi_type_info_size (item_type_info),
+                item_type_info, item_transfer, direction);
+
 
             gi_base_info_unref ((GIBaseInfo *)item_type_info);
         }
@@ -1033,7 +1526,23 @@ _pygi_argument_release (GIArgument *arg, GITypeInfo *type_info,
         if ((direction == GI_DIRECTION_IN && transfer == GI_TRANSFER_NOTHING)
             || (direction == GI_DIRECTION_OUT
                 && transfer != GI_TRANSFER_NOTHING)) {
-            g_array_free (array, TRUE);
+            switch (gi_type_info_get_array_type (type_info)) {
+            case GI_ARRAY_TYPE_C:
+                g_free (arg->v_pointer);
+                break;
+            case GI_ARRAY_TYPE_ARRAY:
+                g_array_unref (arg->v_pointer);
+                break;
+            case GI_ARRAY_TYPE_PTR_ARRAY:
+                g_ptr_array_unref (arg->v_pointer);
+                break;
+            case GI_ARRAY_TYPE_BYTE_ARRAY:
+                g_byte_array_unref (arg->v_pointer);
+                break;
+            default:
+                g_critical ("_pygi_argument_release:array - not reachable");
+                break;
+            }
         }
 
         break;
@@ -1164,49 +1673,12 @@ _pygi_argument_release (GIArgument *arg, GITypeInfo *type_info,
 
         hash_table = arg->v_pointer;
 
-        if (direction == GI_DIRECTION_IN
-            && transfer != GI_TRANSFER_EVERYTHING) {
-            /* We created the table without a destroy function, so keys and
-                 * values need to be released. */
-            GITypeInfo *key_type_info;
-            GITypeInfo *value_type_info;
-            GITransfer item_transfer;
-            GHashTableIter hash_table_iter;
-            gpointer key;
-            gpointer value;
-
-            key_type_info = gi_type_info_get_param_type (type_info, 0);
-            g_assert (key_type_info != NULL);
-
-            value_type_info = gi_type_info_get_param_type (type_info, 1);
-            g_assert (value_type_info != NULL);
-
-            if (direction == GI_DIRECTION_IN) {
-                item_transfer = GI_TRANSFER_NOTHING;
-            } else {
-                item_transfer = GI_TRANSFER_EVERYTHING;
-            }
-
-            g_hash_table_iter_init (&hash_table_iter, hash_table);
-            while (g_hash_table_iter_next (&hash_table_iter, &key, &value)) {
-                _pygi_argument_release ((GIArgument *)&key, key_type_info,
-                                        item_transfer, direction);
-                _pygi_argument_release ((GIArgument *)&value, value_type_info,
-                                        item_transfer, direction);
-            }
-
-            gi_base_info_unref ((GIBaseInfo *)key_type_info);
-            gi_base_info_unref ((GIBaseInfo *)value_type_info);
-        } else if (direction == GI_DIRECTION_OUT
-                   && transfer == GI_TRANSFER_CONTAINER) {
+        if (direction == GI_DIRECTION_OUT
+            && transfer == GI_TRANSFER_CONTAINER) {
             /* Be careful to avoid keys and values being freed if the
-                 * callee gave a destroy function. */
+             * callee gave a destroy function. */
             g_hash_table_steal_all (hash_table);
-        }
-
-        if ((direction == GI_DIRECTION_IN && transfer == GI_TRANSFER_NOTHING)
-            || (direction == GI_DIRECTION_OUT
-                && transfer != GI_TRANSFER_NOTHING)) {
+        } else {
             g_hash_table_unref (hash_table);
         }
 

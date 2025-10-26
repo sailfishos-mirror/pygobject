@@ -1069,6 +1069,12 @@ class TestInstallProperties(unittest.TestCase):
         )
 
 
+class SimpleObject(GObject.GObject):
+    # Need to declare this here so that we don't end up
+    # with many copies of the class
+    pass
+
+
 class CPropertiesTestBase:
     # Tests for properties implemented in C not Python.
 
@@ -1355,7 +1361,34 @@ class CPropertiesTestBase:
         self.assertTrue(isinstance(self.get_prop(obj, "list"), list))
         self.assertEqual(self.get_prop(obj, "list"), ["1", "2", "3"])
 
-    @unittest.expectedFailure
+    # def test_annotated_garray_construct(self):
+    #     obj = GIMarshallingTests.PropertiesObject(some_boxed_garray=[1, 2, 3])
+    #     self.assertEqual(self.get_prop(obj, 'some-boxed-garray'), [1, 2, 3])
+
+    # def test_annotated_gptrarray_construct(self):
+    #     obj = GIMarshallingTests.PropertiesObject(some_boxed_gptrarray=[
+    #         SimpleObject(), SimpleObject(), SimpleObject()
+    #     ])
+    #     self.assertEqual([
+    #         x.__gtype__.name for x in
+    #         self.get_prop(obj, 'some-boxed-gptrarray')
+    #     ], ['tests+test_properties+SimpleObject'] * 3)
+
+    def test_annotated_gbytearray_construct(self):
+        obj = GIMarshallingTests.PropertiesObject(some_byte_array=b"aaa")
+        self.assertEqual(self.get_prop(obj, "some-byte-array"), b"aaa")
+
+        obj = GIMarshallingTests.PropertiesObject(some_byte_array=[b"a", b"a", b"a"])
+        self.assertEqual(self.get_prop(obj, "some-byte-array"), b"aaa")
+
+    # def test_annotated_c_array_construct_fixed_size(self):
+    #     obj = GIMarshallingTests.PropertiesObject(some_boxed_array_fixed_size=[1, 2])
+    #     self.assertEqual(self.get_prop(obj, 'some-boxed-array-fixed-size'), [1, 2])
+
+    # def test_annotated_c_array_construct_zero_terminated(self):
+    #     obj = GIMarshallingTests.PropertiesObject(some_boxed_array_zero_terminated=[1, 2, 3, 4])
+    #     self.assertEqual(self.get_prop(obj, 'some-boxed-array-zero-terminated'), [1, 2, 3, 4])
+
     def test_boxed_glist_ctor(self):
         list_ = [GLib.MININT, 42, GLib.MAXINT]
         obj = GIMarshallingTests.PropertiesObject(some_boxed_glist=list_)
