@@ -216,7 +216,7 @@ pygi_get_property_value_by_name (PyGObject *self, gchar *param_name)
     return pygi_get_property_value (self, pspec);
 }
 
-int
+static int
 pygi_set_property_gvalue_from_property_info (GIPropertyInfo *property_info,
                                              GValue *value, PyObject *py_value)
 {
