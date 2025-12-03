@@ -140,7 +140,7 @@ _pygi_marshal_from_py_interface_enum (PyGIInvokeState *state,
                                       PyGICallableCache *callable_cache,
                                       PyGIArgCache *arg_cache,
                                       PyObject *py_arg, GIArgument *arg,
-                                      gpointer *cleanup_data)
+                                      MarshalCleanupData *cleanup_data)
 {
     PyObject *py_long;
     long c_long;
@@ -208,7 +208,7 @@ _pygi_marshal_from_py_interface_flags (PyGIInvokeState *state,
                                        PyGICallableCache *callable_cache,
                                        PyGIArgCache *arg_cache,
                                        PyObject *py_arg, GIArgument *arg,
-                                       gpointer *cleanup_data)
+                                       MarshalCleanupData *cleanup_data)
 {
     PyObject *py_long;
     unsigned long c_ulong;
@@ -253,7 +253,7 @@ static PyObject *
 _pygi_marshal_to_py_interface_enum (PyGIInvokeState *state,
                                     PyGICallableCache *callable_cache,
                                     PyGIArgCache *arg_cache, GIArgument *arg,
-                                    gpointer *cleanup_data)
+                                    MarshalCleanupData *cleanup_data)
 {
     PyGIInterfaceCache *iface_cache = (PyGIInterfaceCache *)arg_cache;
     GIBaseInfo *interface;
@@ -276,7 +276,7 @@ static PyObject *
 _pygi_marshal_to_py_interface_flags (PyGIInvokeState *state,
                                      PyGICallableCache *callable_cache,
                                      PyGIArgCache *arg_cache, GIArgument *arg,
-                                     gpointer *cleanup_data)
+                                     MarshalCleanupData *cleanup_data)
 {
     PyGIInterfaceCache *iface_cache = (PyGIInterfaceCache *)arg_cache;
     GIBaseInfo *interface;
