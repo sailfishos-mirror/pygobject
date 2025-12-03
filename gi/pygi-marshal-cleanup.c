@@ -108,7 +108,8 @@ pygi_marshal_cleanup_args_from_py_marshal_success (PyGIInvokeState *state,
             PyObject *py_arg =
                 PyTuple_GET_ITEM (state->py_in_args, arg_cache->py_arg_index);
             cleanup_func (state, arg_cache, py_arg, cleanup_data, TRUE);
-            state->args[i].arg_cleanup_data = (MarshalCleanupData){ NULL };
+            state->args[i].arg_cleanup_data =
+                (MarshalCleanupData){ NULL, NULL };
         }
     }
 
@@ -195,7 +196,7 @@ pygi_marshal_cleanup_args_from_py_parameter_fail (PyGIInvokeState *state,
             _cleanup_caller_allocates (state, arg_cache, cleanup_data.data,
                                        FALSE);
         }
-        state->args[i].arg_cleanup_data = (MarshalCleanupData){ NULL };
+        state->args[i].arg_cleanup_data = (MarshalCleanupData){ NULL, NULL };
     }
 
     if (have_error) PyErr_Restore (error_type, error_value, error_traceback);
