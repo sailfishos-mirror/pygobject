@@ -105,6 +105,7 @@ destroy_notifier_for_object (gpointer object, PyGIArgCache *arg_cache)
             (GIObjectInfo *)iface_cache->interface_info);
     }
 }
+
 static PyObject *
 _pygi_marshal_to_py_called_from_c_interface_object_cache_adapter (
     PyGIInvokeState *state, PyGICallableCache *callable_cache,
