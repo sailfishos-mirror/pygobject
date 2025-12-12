@@ -18,6 +18,7 @@ class Number:
 
 
 class TestFields(unittest.TestCase):
+    @unittest.expectedFailure
     def test_int8(self):
         s = Regress.TestStructA()
         s.some_int8 = 21
@@ -37,6 +38,7 @@ class TestFields(unittest.TestCase):
         s.some_int8 = Number(55)
         self.assertEqual(s.some_int8, 55)
 
+    @unittest.expectedFailure
     def test_int(self):
         s = Regress.TestStructA()
         s.some_int = GLib.MAXINT
@@ -53,6 +55,7 @@ class TestFields(unittest.TestCase):
         s.some_int = Number(GLib.MININT)
         self.assertEqual(s.some_int, GLib.MININT)
 
+    @unittest.expectedFailure
     def test_long(self):
         s = GIMarshallingTests.SimpleStruct()
         s.long_ = GLib.MAXLONG

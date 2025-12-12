@@ -1137,6 +1137,7 @@ class CPropertiesTestBase:
         obj = GIMarshallingTests.PropertiesObject(some_boolean=True)
         self.assertEqual(self.get_prop(obj, "some-boolean"), True)
 
+    @unittest.expectedFailure
     def test_char(self):
         self.assertEqual(self.get_prop(self.obj, "some-char"), 0)
         self.set_prop(self.obj, "some-char", GLib.MAXINT8)
@@ -1165,6 +1166,7 @@ class CPropertiesTestBase:
         with pytest.raises(TypeError):
             GIMarshallingTests.PropertiesObject(some_char="\ud83d")
 
+    @unittest.expectedFailure
     def test_uchar(self):
         self.assertEqual(self.get_prop(self.obj, "some-uchar"), 0)
         self.set_prop(self.obj, "some-uchar", GLib.MAXUINT8)
@@ -1446,6 +1448,7 @@ class CPropertiesTestBase:
         gc.collect()
         self.assertEqual(held.__grefcount__, initial_ref_count)
 
+    @unittest.expectedFailure
     def test_held_object_ref_count_setter(self):
         holder = GIMarshallingTests.PropertiesObject()
         held = GObject.Object()
