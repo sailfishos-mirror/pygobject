@@ -563,6 +563,26 @@ add_properties (GObjectClass *klass, PyObject *properties)
     return ret;
 }
 
+/*
+ * Create a wrapper, but keep the GObject floating intact.
+ */
+static PyObject *
+pyg_object_new_retain_floating (GObject *object, GObjectClass *klass)
+{
+    PyObject *object_wrapper;
+
+    if (g_object_is_floating (object)) {
+        g_object_ref (object);
+        object_wrapper = pygobject_new_full (object,
+                                             /*steal=*/TRUE, klass);
+        g_object_force_floating (object);
+    } else {
+        object_wrapper = pygobject_new_full (object,
+                                             /*steal=*/FALSE, klass);
+    }
+    return object_wrapper;
+}
+
 static void
 pyg_object_get_property (GObject *object, guint property_id, GValue *value,
                          GParamSpec *pspec)
@@ -572,12 +592,8 @@ pyg_object_get_property (GObject *object, guint property_id, GValue *value,
 
     state = PyGILState_Ensure ();
 
-    object_wrapper = g_object_get_qdata (object, pygobject_wrapper_key);
-
-    if (object_wrapper)
-        Py_INCREF (object_wrapper);
-    else
-        object_wrapper = pygobject_new (object);
+    object_wrapper =
+        pyg_object_new_retain_floating (object, G_OBJECT_GET_CLASS (object));
 
     if (object_wrapper == NULL) {
         PyGILState_Release (state);
@@ -604,17 +620,8 @@ pyg_object_set_property (GObject *object, guint property_id,
 
     state = PyGILState_Ensure ();
 
-    object_wrapper = g_object_get_qdata (object, pygobject_wrapper_key);
-
-    if (object_wrapper)
-        Py_INCREF (object_wrapper);
-    else
-        object_wrapper = pygobject_new (object);
-
-    if (object_wrapper == NULL) {
-        PyGILState_Release (state);
-        return;
-    }
+    object_wrapper =
+        pyg_object_new_retain_floating (object, G_OBJECT_GET_CLASS (object));
 
     py_pspec = pygi_fundamental_new (pspec);
     py_value = pyg_value_to_pyobject (value, TRUE);
@@ -650,15 +657,7 @@ pyg_object_dispose (GObject *object)
         object_wrapper = g_object_get_qdata (object, pygobject_wrapper_key);
         Py_XINCREF (object_wrapper);
 #else
-        if (g_object_is_floating (object)) {
-            g_object_ref (object);
-            object_wrapper = pygobject_new_full (object,
-                                                 /*steal=*/TRUE, klass);
-            g_object_force_floating (object);
-        } else {
-            object_wrapper = pygobject_new_full (object,
-                                                 /*steal=*/FALSE, klass);
-        }
+        object_wrapper = pyg_object_new_retain_floating (object, klass);
 #endif
 
         if (object_wrapper != NULL
@@ -757,16 +756,7 @@ pygobject__g_instance_init (GTypeInstance *instance, gpointer g_class)
         /* This looks like a python object created through g_object_new().
          * we have no python wrapper, so create it now. */
 
-        if (g_object_is_floating (object)) {
-            g_object_ref (object);
-            wrapper = pygobject_new_full (object,
-                                          /*steal=*/TRUE, g_class);
-            g_object_force_floating (object);
-        } else {
-            wrapper = pygobject_new_full (object,
-                                          /*steal=*/FALSE, g_class);
-        }
-
+        wrapper = pyg_object_new_retain_floating (object, g_class);
         needs_init = TRUE;
     }
 
