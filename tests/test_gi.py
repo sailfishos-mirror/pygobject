@@ -1822,6 +1822,14 @@ class TestGValue(unittest.TestCase):
         )
         GIMarshallingTests.gvalue_in_enum(value)
 
+    def test_unset_gvalue(self):
+        v = GObject.Value()
+        v2 = GObject.Value(GObject.Value.__gtype__, v)
+
+        assert type(v2) is GObject.Value
+        with pytest.raises(TypeError):
+            v2.get_value()
+
     def test_gvalue_out(self):
         self.assertEqual(42, GIMarshallingTests.gvalue_out())
 
