@@ -67,15 +67,12 @@ from gi._error import GError
 Error = GError
 
 
-class Pid:
-    def __init__(self, pid):
-        self._pid = pid
-
-    def __int__(self):
-        return self._pid
-
+class Pid(int):
     def close(self):
-        GLib.spawn_close_pid(self._pid)
+        GLib.spawn_close_pid(self)
+
+    def __del__(self):
+        self.close()
 
 
 def spawn_async(
