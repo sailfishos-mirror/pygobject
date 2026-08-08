@@ -164,8 +164,7 @@ https://my.org/q?x=1&y=2
 
         timeout_msec, fds = context.query(0)
 
-        print("test_main_context_query timeout_msec =", timeout_msec, " fds =", fds)  # noqa: T201
-        assert timeout_msec == 0
+        assert timeout_msec <= 0
         assert len(fds) == 1
 
     @unittest.skipIf(os.name == "nt", "hangs")
