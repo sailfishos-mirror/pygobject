@@ -240,11 +240,8 @@ _pygi_marshal_from_py_array (PyGIInvokeState *state,
             && !is_zero_terminated) {
             arg->v_pointer = data;
             /* Borrowing, nothing to clean up. */
-            if (!_marshal_length_arg_from_py (state, callable_cache,
-                                              array_cache, length))
-                return FALSE;
-
-            return TRUE;
+            return _marshal_length_arg_from_py (state, callable_cache,
+                                                array_cache, length);
         }
     }
 
