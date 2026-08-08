@@ -1454,6 +1454,11 @@ class TestGBytes(unittest.TestCase):
         self.assertEqual(3, b.get_size())
         self.assertEqual(b"\x00\x01\xff", b.get_data())
 
+    def test_gbytes_create_from_bytearray(self):
+        b = GLib.Bytes.new(bytearray(b"\x00\x01\xff"))
+        self.assertEqual(3, b.get_size())
+        self.assertEqual(b"\x00\x01\xff", b.get_data())
+
     def test_gbytes_create_take(self):
         b = GLib.Bytes.new_take(b"\x00\x01\xff")
         self.assertEqual(3, b.get_size())

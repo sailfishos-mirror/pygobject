@@ -261,8 +261,9 @@ _pygi_marshal_from_py_array (PyGIInvokeState *state,
     }
 
     if (sequence_cache->item_cache->type_tag == GI_TYPE_TAG_UINT8
-        && PyBytes_Check (py_arg)) {
-        gchar *data = PyBytes_AsString (py_arg);
+        && ((PyBytes_Check (py_arg)) || PyByteArray_Check (py_arg))) {
+        gchar *data = PyBytes_Check (py_arg) ? PyBytes_AsString (py_arg)
+                                             : PyByteArray_AsString (py_arg);
 
         memcpy (array_->data, data, length);
         array_->len = length;
