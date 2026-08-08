@@ -164,6 +164,7 @@ https://my.org/q?x=1&y=2
 
         timeout_msec, fds = context.query(0)
 
+        print("test_main_context_query timeout_msec =", timeout_msec, " fds =", fds)  # noqa: T201
         assert timeout_msec == 0
         assert len(fds) == 1
 
@@ -343,7 +344,9 @@ class TestGLibPlatform(unittest.TestCase):
         if symbol_name.startswith(self.platform_name):
             platform_symbol_name = symbol_name.removeprefix(self.platform_name)
         elif symbol_name.startswith(f"{self.platform_name.lower()}_"):
-            platform_symbol_name = symbol_name.removeprefix(f"{self.platform_name.lower()}_")
+            platform_symbol_name = symbol_name.removeprefix(
+                f"{self.platform_name.lower()}_"
+            )
 
         with warnings.catch_warnings(record=True) as warn:
             symbol = getattr(GLib, symbol_name)
