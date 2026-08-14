@@ -225,13 +225,23 @@ pygi_arg_object_to_py (GIArgument *arg, GITransfer transfer)
 static GDestroyNotify
 destroy_notifier_for_object (gpointer object, PyGIArgCache *arg_cache)
 {
-    if (G_IS_OBJECT (object)) {
-        return (GDestroyNotify)g_object_unref;
-    } else {
-        PyGIInterfaceCache *iface_cache = (PyGIInterfaceCache *)arg_cache;
+    PyGIInterfaceCache *iface_cache = (PyGIInterfaceCache *)arg_cache;
 
+    if (object == NULL)
+        return NULL;
+    else if (G_IS_OBJECT (object))
+        return (GDestroyNotify)g_object_unref;
+    else if (GI_IS_OBJECT_INFO (iface_cache->interface_info))
         return (GDestroyNotify)gi_object_info_get_unref_function_pointer (
             (GIObjectInfo *)iface_cache->interface_info);
+    else {
+        g_warning (
+            "Type %s is not an object type, yet is handled by the object "
+            "marshaller.",
+            iface_cache->interface_info != NULL
+                ? G_OBJECT_TYPE_NAME (iface_cache->interface_info)
+                : "<NULL>");
+        return NULL;
     }
 }
 
